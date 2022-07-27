@@ -793,6 +793,7 @@
           </dependencies>
           <!-- Generic testing configuration for all packages -->
           <configuration>
+            <argLine>-Xmx4096m</argLine>
             <groups>${surefire.firstPartGroups}</groups>
             <failIfNoTests>false</failIfNoTests>
             <trimStackTrace>false</trimStackTrace>

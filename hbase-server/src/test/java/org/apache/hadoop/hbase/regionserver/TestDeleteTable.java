@@ -23,12 +23,16 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.HBaseClassTestRule;
-import org.apache.hadoop.hbase.HBaseTestingUtility;
-import org.apache.hadoop.hbase.HColumnDescriptor;
-import org.apache.hadoop.hbase.HTableDescriptor;
+import org.apache.hadoop.hbase.HBaseTestingUtil;
+
+import org.apache.hadoop.hbase.client.ColumnFamilyDescriptor;
+import org.apache.hadoop.hbase.client.ColumnFamilyDescriptorBuilder;
+import org.apache.hadoop.hbase.client.RegionInfo;
+import org.apache.hadoop.hbase.client.TableDescriptor;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Table;
+import org.apache.hadoop.hbase.client.TableDescriptorBuilder;
 import org.apache.hadoop.hbase.master.snapshot.DisabledTableSnapshotHandler;
 import org.apache.hadoop.hbase.mob.MobUtils;
 import org.apache.hadoop.hbase.testclassification.MediumTests;
@@ -36,7 +40,6 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.CommonFSUtils;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.hbase.util.HFileArchiveUtil;
-import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.util.FSUtils;
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -55,10 +58,10 @@ public class TestDeleteTable{
   public static final HBaseClassTestRule CLASS_RULE =
       HBaseClassTestRule.forClass(TestDeleteTable.class);
 
-  private final static HBaseTestingUtility TEST_UTIL = new HBaseTestingUtility();
+  private final static HBaseTestingUtil TEST_UTIL = new HBaseTestingUtil();
 
-  private final static byte[] FAMILY1 = Bytes.toBytes("normal");
-  private final static byte[] FAMILY2 = Bytes.toBytes("mob");
+  private final static byte[] FAMILY1 = Bytes.toBytes("mob");
+  private final static byte[] FAMILY2 = Bytes.toBytes("normal");
 
   private final static byte[] QF = Bytes.toBytes("qualifier");
   private static Random random = new Random();
@@ -83,21 +86,20 @@ public class TestDeleteTable{
     return val;
   }
 
-  private HTableDescriptor createTableDescriptor(TableName tableName) {
-    HTableDescriptor htd = new HTableDescriptor(tableName);
-    HColumnDescriptor hcd1 = new HColumnDescriptor(FAMILY1);
-    HColumnDescriptor hcd2 = new HColumnDescriptor(FAMILY2);
+  private TableDescriptor createTableDescriptor(TableName tableName) {
+    ColumnFamilyDescriptorBuilder builder1 = ColumnFamilyDescriptorBuilder.newBuilder(FAMILY1);
+    ColumnFamilyDescriptorBuilder builder2 = ColumnFamilyDescriptorBuilder.newBuilder(FAMILY2);
 
-    hcd1.setMobEnabled(true);
-    hcd1.setMobThreshold(0);
+    builder1.setMobEnabled(true);
+    builder1.setMobThreshold(0);
 
-
-    htd.addFamily(hcd1);
-    htd.addFamily(hcd2);
-    return htd;
+    return TableDescriptorBuilder.newBuilder(tableName)
+      .setColumnFamily(builder1.build())
+      .setColumnFamily(builder2.build())
+      .build();
   }
 
-  private Table createTableWithFiles(HTableDescriptor htd) throws IOException {
+  private Table createTableWithFiles(TableDescriptor htd) throws IOException {
     Table table = TEST_UTIL.createTable(htd, null);
     try {
       // insert data
@@ -124,13 +126,13 @@ public class TestDeleteTable{
   @Test
   public void testDeleteTableWithoutArchive() throws Exception {
     final TableName tableName = TableName.valueOf(name.getMethodName());
-    HTableDescriptor htd = createTableDescriptor(tableName);
-    HColumnDescriptor hcd_mob = htd.getFamily(FAMILY1);
-    HColumnDescriptor hcd = htd.getFamily(FAMILY2);
+    TableDescriptor htd = createTableDescriptor(tableName);
+    ColumnFamilyDescriptor hcd_mob = htd.getColumnFamily(FAMILY1);
+    ColumnFamilyDescriptor hcd = htd.getColumnFamily(FAMILY2);
 
     Table table = createTableWithFiles(htd);
 
-    HRegionInfo regionInfo = TEST_UTIL.getHBaseAdmin().getTableRegions(tableName).get(0);
+    RegionInfo regionInfo = TEST_UTIL.getAdmin().getRegions(tableName).get(0);
 
     // the mob file exists
     Assert.assertEquals(1, countMobFiles(tableName, hcd_mob.getNameAsString()));
@@ -156,13 +158,13 @@ public class TestDeleteTable{
   @Test
   public void testDeleteTableWithArchive() throws Exception {
     final TableName tableName = TableName.valueOf(name.getMethodName());
-    HTableDescriptor htd = createTableDescriptor(tableName);
-    HColumnDescriptor hcd_mob = htd.getFamily(FAMILY1);
-    HColumnDescriptor hcd = htd.getFamily(FAMILY2);
+    TableDescriptor htd = createTableDescriptor(tableName);
+    ColumnFamilyDescriptor hcd_mob = htd.getColumnFamily(FAMILY1);
+    ColumnFamilyDescriptor hcd = htd.getColumnFamily(FAMILY2);
 
     Table table = createTableWithFiles(htd);
 
-    HRegionInfo regionInfo = TEST_UTIL.getHBaseAdmin().getTableRegions(tableName).get(0);
+    RegionInfo regionInfo = TEST_UTIL.getAdmin().getRegions(tableName).get(0);
 
 
     // the mob file exists
@@ -189,13 +191,13 @@ public class TestDeleteTable{
   @Test
   public void testDeleteTableDefaultBehavior() throws Exception {
     final TableName tableName = TableName.valueOf(name.getMethodName());
-    HTableDescriptor htd = createTableDescriptor(tableName);
-    HColumnDescriptor hcd_mob = htd.getFamily(FAMILY1);
-    HColumnDescriptor hcd = htd.getFamily(FAMILY2);
+    TableDescriptor htd = createTableDescriptor(tableName);
+    ColumnFamilyDescriptor hcd_mob = htd.getColumnFamily(FAMILY1);
+    ColumnFamilyDescriptor hcd = htd.getColumnFamily(FAMILY2);
 
     Table table = createTableWithFiles(htd);
 
-    HRegionInfo regionInfo = TEST_UTIL.getHBaseAdmin().getTableRegions(tableName).get(0);
+    RegionInfo regionInfo = TEST_UTIL.getAdmin().getRegions(tableName).get(0);
 
 
     // the mob file exists
@@ -233,9 +235,9 @@ public class TestDeleteTable{
 
 
 
-    HTableDescriptor htd_no_snapshot = createTableDescriptor(tn_no_snapshot);
-    HTableDescriptor htd_snapshot_ingress = createTableDescriptor(tn_snapshot_inprogress);
-    HTableDescriptor htd_snapshot = createTableDescriptor(tn_snapshot);
+    TableDescriptor htd_no_snapshot = createTableDescriptor(tn_no_snapshot);
+    TableDescriptor htd_snapshot_ingress = createTableDescriptor(tn_snapshot_inprogress);
+    TableDescriptor htd_snapshot = createTableDescriptor(tn_snapshot);
 
 
     Table tb_no_snapshot = createTableWithFiles(htd_no_snapshot);
@@ -315,11 +317,11 @@ public class TestDeleteTable{
 
     Path rootDir = CommonFSUtils.getRootDir(TEST_UTIL.getConfiguration());
 
-    if(TEST_UTIL.getHBaseAdmin().getTableRegions(tn).isEmpty()) {
+    if(TEST_UTIL.getAdmin().getRegions(tn).isEmpty()) {
       return 0;
     }
 
-    HRegionInfo regionInfo = TEST_UTIL.getHBaseAdmin().getTableRegions(tn).get(0);
+    RegionInfo regionInfo = TEST_UTIL.getAdmin().getRegions(tn).get(0);
 
     Path regionDir = FSUtils.getRegionDirFromRootDir(rootDir, regionInfo);
     Path nfDir = new Path(regionDir,familyName);
@@ -330,7 +332,7 @@ public class TestDeleteTable{
     return 0;
   }
 
-  private int countArchiveRegionFiles(TableName tn, String familyName, HRegionInfo regionInfo)
+  private int countArchiveRegionFiles(TableName tn, String familyName, RegionInfo regionInfo)
     throws IOException {
 
     FileSystem fs = TEST_UTIL.getTestFileSystem();
